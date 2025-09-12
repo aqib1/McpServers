@@ -12,13 +12,13 @@ def get_db_connection(db_name: str):
     conn.row_factory = sqlite3.Row
     return conn
 
-def dict_form_row(row):
+def dict_from_row(row):
     """Convert a SQLite row to a dictionary."""
     return dict(row) if row else None
 
-def dict_form_rows(rows):
+def dicts_from_rows(rows):
     """Convert a list of SQLite rows to a list of dictionaries."""
-    return [dict_form_row(row) for row in rows]
+    return [dict_from_row(row) for row in rows]
 
 @mcp.tool()
 def get_countries(
@@ -65,7 +65,7 @@ def get_countries(
     query += " LIMIT ?"
     params.append(limit)
     cursor = conn.execute(query, params)
-    results = dict_form_rows(cursor.fetchall())
+    results = dicts_from_rows(cursor.fetchall())
     conn.close()
     return results
 
@@ -95,7 +95,7 @@ def search_countries_by_name(name: str, limit: int = 10) -> List[Dict[str, Any]]
         params = (limit,)
 
     cursor = conn.execute(query, params)
-    results = dict_form_rows(cursor.fetchall())
+    results = dicts_from_rows(cursor.fetchall())
     conn.close()
     return results
 
@@ -108,7 +108,7 @@ def get_country_by_iso(iso_code: str) -> Optional[Dict[str, Any]]:
     cursor = conn.execute(query, params)
     row = cursor.fetchone()
     conn.close()
-    return dict_form_row(row)
+    return dict_from_row(row)
 
 @mcp.tool()
 def get_country_by_region(region: str) -> List[Dict[str, Any]]:
@@ -117,7 +117,7 @@ def get_country_by_region(region: str) -> List[Dict[str, Any]]:
     query = "SELECT * FROM countries WHERE region = ?"
     params = (region,)
     cursor = conn.execute(query, params)
-    results = dict_form_rows(cursor.fetchall())
+    results = dicts_from_rows(cursor.fetchall())
     conn.close()
     return results
 
@@ -128,7 +128,7 @@ def get_counrty_by_currency(currency: str) -> List[Dict[str, Any]]:
     query = "SELECT * FROM countries WHERE currency = ?"
     params = (currency,)
     cursor = conn.execute(query, params)
-    results = dict_form_rows(cursor.fetchall())
+    results = dicts_from_rows(cursor.fetchall())
     conn.close()
     return results
 
@@ -147,7 +147,7 @@ def get_cities(name: str = "", country_code: str = "", limit: int = 10) -> List[
     query += " ORDER BY name LIMIT ?"
     params.append(limit)
     cursor = conn.execute(query, params)
-    results = dict_form_rows(cursor.fetchall())
+    results = dicts_from_rows(cursor.fetchall())
     conn.close()
     return results
 
@@ -158,8 +158,47 @@ def get_cities_in_country(country_code: str, limit: int = 10) -> List[Dict[str, 
     query = "SELECT * FROM cities WHERE country_code = ? ORDER BY name LIMIT ?"
     params = (country_code, limit)
     cursor = conn.execute(query, params)
-    results = dict_form_rows(cursor.fetchall())
+    results = dicts_from_rows(cursor.fetchall())
     conn.close()
+    return results
+
+
+
+# =============================================================================
+# STATE/PROVINCE TOOLS
+# =============================================================================
+
+@mcp.tool()
+def search_states(name: str = "", country_code: str = "") -> List[Dict[str, Any]]:
+    """
+    Search for states/provinces by name and optionally filter by country.
+
+    Args:
+        name: State/province name to search for (partial matches allowed)
+        country_code: Two-letter country code to filter by (optional)
+
+    Returns:
+        List of states/provinces matching the search criteria
+    """
+    conn = get_db_connection(db_name="world")
+
+    query = "SELECT * FROM states WHERE 1=1"
+    params = []
+
+    if name:
+        query += " AND name LIKE ?"
+        params.append(f"%{name}%")
+
+    if country_code:
+        query += " AND country_code = ?"
+        params.append(country_code.upper())
+
+    query += " ORDER BY name LIMIT 30"
+
+    cursor = conn.execute(query, params)
+    results = dicts_from_rows(cursor.fetchall())
+    conn.close()
+
     return results
 
 @mcp.tool()
@@ -169,8 +208,119 @@ def get_states_in_country(country_code: str) -> List[Dict[str, Any]]:
     query = "SELECT * FROM states WHERE country_code = ? ORDER BY name"
     params = (country_code,)
     cursor = conn.execute(query, params)
-    results = dict_form_rows(cursor.fetchall())
+    results = dicts_from_rows(cursor.fetchall())
     conn.close()
+    return results
+
+
+# =============================================================================
+# REGION TOOLS
+# =============================================================================
+
+@mcp.tool()
+def get_all_regions() -> List[Dict[str, Any]]:
+    """
+    Get all world regions.
+
+    Returns:
+        List of all regions
+    """
+    conn = get_db_connection(db_name="world")
+
+    cursor = conn.execute("SELECT * FROM regions ORDER BY name")
+    results = dicts_from_rows(cursor.fetchall())
+    conn.close()
+
+    return results
+
+@mcp.tool()
+def get_subregions_in_region(region_id: int) -> List[Dict[str, Any]]:
+    """
+    Get all subregions within a specific region.
+
+    Args:
+        region_id: The ID of the parent region
+
+    Returns:
+        List of subregions in the region
+    """
+    conn = get_db_connection(db_name="world")
+
+    cursor = conn.execute(
+        "SELECT * FROM subregions WHERE region_id = ? ORDER BY name", [region_id]
+    )
+    results = dicts_from_rows(cursor.fetchall())
+    conn.close()
+
+    return results
+
+
+# =============================================================================
+# STATISTICS AND SUMMARY TOOLS
+# =============================================================================
+
+@mcp.tool()
+def get_database_stats() -> Dict[str, int]:
+    """
+    Get statistics about the database contents.
+
+    Returns:
+        Dictionary with counts of countries, cities, states, regions, and subregions
+    """
+    conn = get_db_connection(db_name="world")
+
+    stats = {}
+
+    # Count each table
+    tables = ["countries", "cities", "states", "regions", "subregions"]
+    for table in tables:
+        cursor = conn.execute(f"SELECT COUNT(*) as count FROM {table}")
+        stats[f"total_{table}"] = cursor.fetchone()["count"]
+
+    conn.close()
+
+    return stats
+
+@mcp.tool()
+def get_countries_summary() -> List[Dict[str, Any]]:
+    """
+    Get a summary of all countries with basic information.
+
+    Returns:
+        List of countries with just name, code, capital, and region
+    """
+    conn = get_db_connection(db_name="world")
+
+    cursor = conn.execute(
+        "SELECT name, iso2, capital, region FROM countries ORDER BY name"
+    )
+    results = dicts_from_rows(cursor.fetchall())
+    conn.close()
+
+    return results
+
+
+@mcp.tool()
+def get_popular_currencies() -> List[Dict[str, Any]]:
+    """
+    Get the most commonly used currencies and how many countries use them.
+
+    Returns:
+        List of currencies with usage counts, ordered by popularity
+    """
+    conn = get_db_connection(db_name="world")
+
+    cursor = conn.execute(
+        """SELECT currency, currency_name, COUNT(*) as country_count
+           FROM countries 
+           WHERE currency IS NOT NULL
+           GROUP BY currency, currency_name
+           ORDER BY country_count DESC
+           LIMIT 20"""
+    )
+    results = dicts_from_rows(cursor.fetchall())
+    conn.close()
+
     return results
 
 if __name__ == "__main__":
